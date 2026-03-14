@@ -1,0 +1,391 @@
+{% extends "unfold/layouts/base_simple.html" %}
+{% load i18n %}
+
+{% block content %}
+<div class="konkurs-dashboard">
+
+  <!-- KPI Kartalar -->
+  <div class="kpi-grid">
+    {% for card in kpi_cards %}
+    <div class="kpi-card kpi-{{ card.color }}">
+      <div class="kpi-icon">
+        <span class="material-symbols-outlined">{{ card.icon }}</span>
+      </div>
+      <div class="kpi-body">
+        <span class="kpi-label">{{ card.label }}</span>
+        <span class="kpi-value">{{ card.value }}</span>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <!-- Grafiklar -->
+  <div class="charts-grid">
+
+    <!-- Line Chart - Kunlik o'sish -->
+    <div class="chart-card">
+      <div class="chart-header">
+        <span class="material-symbols-outlined">show_chart</span>
+        <h3>{% trans "Kunlik foydalanuvchilar o'sishi" %}</h3>
+      </div>
+      <div class="chart-stats">
+        <div class="stat-item">
+          <span class="stat-label">BUGUN QO'SHILDI</span>
+          <span class="stat-value orange">+{{ today_new_users }}</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-label">JAMI (30 KUN)</span>
+          <span class="stat-value blue">{{ total_users_count }}</span>
+        </div>
+      </div>
+      <canvas id="lineChart" height="160"></canvas>
+      <div class="chart-legend">
+        <div class="legend-item">
+          <span class="legend-dot orange-dot"></span>
+          <span>Yangi foydalanuvchilar</span>
+        </div>
+        <div class="legend-item">
+          <span class="legend-dot blue-dot"></span>
+          <span>Jami</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Top referalchilar -->
+    <div class="chart-card">
+      <div class="chart-header">
+        <span class="material-symbols-outlined">emoji_events</span>
+        <h3>{% trans "Top 5 referalchilar" %}</h3>
+      </div>
+      <canvas id="barChart" height="200"></canvas>
+    </div>
+
+  </div>
+
+  <!-- Quyi qism -->
+  <div class="bottom-grid">
+
+    <!-- So'nggi foydalanuvchilar -->
+    <div class="section-card">
+      <div class="section-header">
+        <span class="material-symbols-outlined">person_add</span>
+        <h3>{% trans "So'nggi ro'yxatdan o'tganlar" %}</h3>
+      </div>
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Ism</th>
+            <th>Telefon</th>
+            <th>Ball</th>
+            <th>Sana</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for user in recent_users %}
+          <tr>
+            <td>
+              <div class="user-cell">
+                <div class="avatar">{{ user.full_name|first|default:"?" }}</div>
+                <strong>{{ user.full_name|default:"—" }}</strong>
+              </div>
+            </td>
+            <td>{{ user.phone|default:"—" }}</td>
+            <td><span class="badge-points">🏆 {{ user.referral_points }}</span></td>
+            <td class="date-cell">{{ user.date_joined|date:"d.m.Y" }}</td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="4" class="empty-row">Hozircha foydalanuvchi yo'q</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Jonli efirlar -->
+    <div class="section-card">
+      <div class="section-header">
+        <span class="material-symbols-outlined">live_tv</span>
+        <h3>{% trans "So'nggi jonli efirlar" %}</h3>
+      </div>
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Nom</th>
+            <th>Ishtirokchilar</th>
+            <th>Holat</th>
+            <th>Sana</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for live in live_stats %}
+          <tr>
+            <td><strong>{{ live.title|default:"—" }}</strong></td>
+            <td><span class="badge-points">👥 {{ live.participants }}</span></td>
+            <td>
+              {% if live.is_active %}
+                <span class="status-badge status-active">🟢 Faol</span>
+              {% else %}
+                <span class="status-badge status-ended">⚫ Tugagan</span>
+              {% endif %}
+            </td>
+            <td class="date-cell">{{ live.started_at|date:"d.m.Y" }}</td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="4" class="empty-row">Hozircha jonli efir yo'q</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+  </div>
+
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+  const dailyNewData   = {{ daily_new_users | safe }};
+  const dailyTotalData = {{ daily_total_users | safe }};
+  const topReferrers   = [
+    {% for u in top_referrers %}
+      { name: "{{ u.full_name|default:u.username }}", points: {{ u.referral_points }} },
+    {% endfor %}
+  ];
+
+  const isDark      = document.documentElement.classList.contains("dark");
+  const gridColor   = isDark ? "rgba(255,255,255,0.07)" : "rgba(0,0,0,0.07)";
+  const textColor   = isDark ? "#9CA3AF" : "#6B7280";
+  const orange      = "#F97316";
+  const blue        = "#60A5FA";
+  const orangeLight = "rgba(249,115,22,0.15)";
+  const blueLight   = "rgba(96,165,250,0.15)";
+
+  Chart.defaults.color = textColor;
+
+  // ── Line Chart ──────────────────────────────
+  new Chart(document.getElementById("lineChart"), {
+    type: "line",
+    data: {
+      labels: dailyNewData.map(d => d.day),
+      datasets: [
+        {
+          label: "Yangi",
+          data: dailyNewData.map(d => d.count),
+          borderColor: orange,
+          backgroundColor: orangeLight,
+          borderWidth: 2,
+          pointBackgroundColor: orange,
+          pointRadius: 2,
+          pointHoverRadius: 5,
+          tension: 0.4,
+          fill: true,
+          yAxisID: "y",
+        },
+        {
+          label: "Jami",
+          data: dailyTotalData.map(d => d.count),
+          borderColor: blue,
+          backgroundColor: blueLight,
+          borderWidth: 2,
+          pointBackgroundColor: blue,
+          pointRadius: 2,
+          pointHoverRadius: 5,
+          tension: 0.4,
+          fill: true,
+          yAxisID: "y1",
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      interaction: {
+        mode: "index",
+        intersect: false,
+      },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: isDark ? "#1F2937" : "#fff",
+          borderColor: orange,
+          borderWidth: 1,
+          titleColor: orange,
+          bodyColor: textColor,
+          padding: 10,
+          callbacks: {
+            title: (items) => items[0].label,
+            label: (item) => {
+              const label = item.datasetIndex === 0 ? "Yangi" : "Jami";
+              return ` ${label}: ${item.raw}`;
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          grid: { color: gridColor },
+          border: { display: false },
+          ticks: {
+            maxTicksLimit: 8,
+            maxRotation: 0,
+            font: { size: 10 }
+          }
+        },
+        y: {
+          grid: { color: gridColor },
+          border: { display: false },
+          beginAtZero: true,
+          ticks: { stepSize: 1, font: { size: 10 } },
+          position: "left",
+        },
+        y1: {
+          grid: { display: false },
+          border: { display: false },
+          beginAtZero: true,
+          ticks: { font: { size: 10 } },
+          position: "right",
+        }
+      }
+    }
+  });
+
+  // ── Bar Chart - Top referalchilar ───────────
+  new Chart(document.getElementById("barChart"), {
+    type: "bar",
+    data: {
+      labels: topReferrers.map(u => u.name.length > 14 ? u.name.substring(0,14)+"…" : u.name),
+      datasets: [{
+        label: "Ball",
+        data: topReferrers.map(u => u.points),
+        backgroundColor: [
+          "#F97316","#FB923C","#FDBA74","#FED7AA","#FEF3C7",
+        ],
+        borderRadius: 6,
+        borderSkipped: false,
+        barPercentage: 0.7,
+        categoryPercentage: 0.5,
+      }]
+    },
+    options: {
+      responsive: true,
+      indexAxis: "y",
+      plugins: { legend: { display: false } },
+      scales: {
+        x: {
+          grid: { color: gridColor },
+          border: { display: false },
+          beginAtZero: true,
+          ticks: { font: { size: 10 } }
+        },
+        y: {
+          grid: { display: false },
+          border: { display: false },
+          ticks: { font: { size: 10 } }
+        }
+      }
+    }
+  });
+</script>
+
+<style>
+  :root {
+    --orange:       #F97316;
+    --orange-light: rgba(249,115,22,0.12);
+    --blue:         #60A5FA;
+    --radius:       10px;
+    --gap:          0.7rem;
+  }
+
+  .konkurs-dashboard { display: flex; flex-direction: column; gap: var(--gap); padding-bottom: 2rem; }
+
+  /* ── KPI Kartalar ── */
+  .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: var(--gap); }
+  .kpi-card {
+    display: flex; align-items: center;
+    gap: 0.75rem;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: var(--radius);
+    padding: 0.75rem;
+    transition: transform 0.2s, box-shadow 0.2s;
+  }
+  .kpi-card:hover { transform: translateY(-3px); box-shadow: 0 8px 24px rgba(0,0,0,0.2); }
+  .kpi-icon .material-symbols-outlined { font-size: 1.8rem; opacity: 0.9; }
+  .kpi-blue   .kpi-icon .material-symbols-outlined { color: #60A5FA; }
+  .kpi-green  .kpi-icon .material-symbols-outlined { color: #34D399; }
+  .kpi-orange .kpi-icon .material-symbols-outlined { color: #FBBF24; }
+  .kpi-purple .kpi-icon .material-symbols-outlined { color: #A78BFA; }
+  .kpi-body { display: flex; flex-direction: column; gap: 2px; }
+  .kpi-label { font-size: 0.68rem; opacity: 0.55; text-transform: uppercase; letter-spacing: 0.06em; }
+  .kpi-value { font-size: 1.2rem; font-weight: 700; line-height: 1; }
+
+  /* ── Chart stats ── */
+  .chart-stats { display: flex; gap: 1.5rem; margin-bottom: 1rem; }
+  .stat-item { display: flex; flex-direction: column; gap: 2px; }
+  .stat-label { font-size: 0.65rem; opacity: 0.5; text-transform: uppercase; letter-spacing: 0.06em; }
+  .stat-value { font-size: 1.4rem; font-weight: 700; line-height: 1; }
+  .stat-value.orange { color: var(--orange); }
+  .stat-value.blue   { color: var(--blue); }
+
+  /* ── Legend ── */
+  .chart-legend { display: flex; gap: 1.2rem; margin-top: 0.75rem; }
+  .legend-item  { display: flex; align-items: center; gap: 6px; font-size: 0.75rem; opacity: 0.7; }
+  .legend-dot   { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
+  .orange-dot   { background: var(--orange); }
+  .blue-dot     { background: var(--blue); }
+
+  /* ── Grafiklar ── */
+  .charts-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--gap); }
+  @media (max-width: 900px) { .charts-grid { grid-template-columns: 1fr; } }
+
+  .chart-card, .section-card {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.07);
+    border-radius: var(--radius);
+    padding: 1.25rem;
+    min-height: 200px;
+  }
+  .chart-header, .section-header {
+    display: flex; align-items: center; gap: 0.5rem;
+    margin-bottom: 1rem;
+  }
+  .chart-header h3, .section-header h3 { margin: 0; font-size: 0.88rem; font-weight: 600; }
+  .chart-header .material-symbols-outlined,
+  .section-header .material-symbols-outlined { color: var(--orange); font-size: 1.1rem; }
+
+  /* ── Quyi grid ── */
+  .bottom-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--gap); }
+  @media (max-width: 900px) { .bottom-grid { grid-template-columns: 1fr; } }
+
+  /* ── Jadval ── */
+  .data-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+  .data-table th {
+    text-align: left;
+    padding: 0.5rem 0.6rem;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+    font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.06em; opacity: 0.5;
+  }
+  .data-table td { padding: 0.55rem 0.6rem; border-bottom: 1px solid rgba(255,255,255,0.05); }
+  .data-table tr:hover td { background: rgba(255,255,255,0.03); }
+  .empty-row { text-align: center; opacity: 0.4; padding: 1.5rem !important; }
+
+  /* ── User cell ── */
+  .user-cell { display: flex; align-items: center; gap: 0.5rem; }
+  .avatar {
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    background: var(--orange); color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 0.78rem; flex-shrink: 0;
+  }
+
+  .date-cell { opacity: 0.6; font-size: 0.78rem; }
+
+  .badge-points {
+    background: var(--orange-light); color: var(--orange);
+    padding: 1px 8px;
+    border-radius: 999px; font-size: 0.75rem; font-weight: 600;
+  }
+
+  .status-badge { padding: 1px 8px; border-radius: 999px; font-size: 0.75rem; font-weight: 600; }
+  .status-active { background: rgba(52,211,153,0.12); color: #34D399; }
+  .status-ended  { background: rgba(156,163,175,0.12); color: #9CA3AF; }
+</style>
+{% endblock %}
